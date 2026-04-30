@@ -56,13 +56,64 @@ def register_routes(app: Flask):
             'avg_latency': round(avg['avg'], 2) if avg and avg['avg'] else None,
         })
 
+    @app.route('/api/stats/chart')
+    def api_stats_chart():
+        try:
+            hours = min(max(int(request.args.get('hours', 24) or 24), 1), 8760)
+        except ValueError:
+            hours = 24
+        group_id = request.args.get('group_id') or None
+        if group_id:
+            try:
+                group_id = int(group_id)
+            except ValueError:
+                group_id = None
+        probe_type = request.args.get('type') or None
+
+        db = get_db()
+        fmt = '%Y-%m-%d %H:00' if hours <= 72 else '%Y-%m-%d'
+        conditions = ["pr.timestamp >= datetime('now', ?)", "p.enabled=1"]
+        params = [f'-{hours} hours']
+        if group_id:
+            conditions.append("p.group_id=?")
+            params.append(group_id)
+        if probe_type:
+            conditions.append("p.type=?")
+            params.append(probe_type)
+
+        where = ' AND '.join(conditions)
+        rows = db.execute(f"""
+            SELECT
+                strftime('{fmt}', pr.timestamp) as period,
+                ROUND(100.0 * SUM(CASE WHEN pr.status='up' THEN 1 ELSE 0 END) / COUNT(*), 1) as uptime_pct,
+                ROUND(AVG(CASE WHEN pr.status='up' THEN pr.latency END), 2) as avg_latency
+            FROM probe_results pr
+            JOIN probes p ON pr.probe_id=p.id
+            WHERE {where}
+            GROUP BY period
+            ORDER BY period ASC
+        """, params).fetchall()
+
+        return jsonify({
+            'labels': [r['period'] for r in rows],
+            'uptime': [r['uptime_pct'] for r in rows],
+            'latency': [r['avg_latency'] for r in rows],
+            'hourly': hours <= 72,
+        })
+
     # ── API: probes ───────────────────────────────────────────────────────────
 
     @app.route('/api/probes', methods=['GET'])
     def api_probes():
         rows = get_db().execute("""
-            SELECT p.*, g.name group_name
-            FROM probes p LEFT JOIN groups g ON p.group_id=g.id
+            SELECT p.*, g.name group_name,
+                ROUND(100.0 * SUM(CASE WHEN pr.status='up' THEN 1 ELSE 0 END)
+                      / NULLIF(COUNT(pr.id), 0), 1) as uptime_24h
+            FROM probes p
+            LEFT JOIN groups g ON p.group_id=g.id
+            LEFT JOIN probe_results pr ON pr.probe_id=p.id
+                AND pr.timestamp >= datetime('now', '-24 hours')
+            GROUP BY p.id
             ORDER BY p.name
         """).fetchall()
         return jsonify([dict(r) for r in rows])
