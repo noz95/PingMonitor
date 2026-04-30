@@ -138,6 +138,38 @@ def register_routes(app: Flask):
         db.commit()
         return jsonify({'ok': True})
 
+    @app.route('/api/probes/bulk', methods=['POST'])
+    def api_bulk_probes():
+        d = request.json or {}
+        ids = d.get('ids', [])
+        action = d.get('action', '')
+        if not ids or not isinstance(ids, list):
+            return jsonify({'error': 'ids requis'}), 400
+        db = get_db()
+        ph = ','.join('?' * len(ids))
+        if action == 'delete':
+            db.execute(f"DELETE FROM probes WHERE id IN ({ph})", ids)
+        elif action == 'enable':
+            db.execute(f"UPDATE probes SET enabled=1 WHERE id IN ({ph})", ids)
+        elif action == 'disable':
+            db.execute(f"UPDATE probes SET enabled=0 WHERE id IN ({ph})", ids)
+        elif action == 'assign_group':
+            group_id = d.get('group_id') or None
+            db.execute(f"UPDATE probes SET group_id=? WHERE id IN ({ph})", [group_id, *ids])
+        elif action == 'update':
+            fields, vals = [], []
+            for k in ('interval', 'timeout', 'failure_threshold'):
+                if d.get(k) is not None:
+                    fields.append(f'{k}=?')
+                    vals.append(int(d[k]))
+            if not fields:
+                return jsonify({'error': 'rien à modifier'}), 400
+            db.execute(f"UPDATE probes SET {', '.join(fields)} WHERE id IN ({ph})", [*vals, *ids])
+        else:
+            return jsonify({'error': 'action invalide'}), 400
+        db.commit()
+        return jsonify({'ok': True, 'affected': len(ids)})
+
     # ── API: groups ───────────────────────────────────────────────────────────
 
     @app.route('/api/groups', methods=['GET'])

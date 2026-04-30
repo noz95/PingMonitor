@@ -7,18 +7,32 @@
   <button class="btn btn-primary" onclick="openModal()"><i class="bi bi-plus-lg me-1"></i>Ajouter</button>
 </div>
 
+<!-- Bulk action bar -->
+<div id="bulk-bar" class="card mb-3 d-none">
+  <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
+    <span id="bulk-count" class="fw-semibold text-secondary me-1"></span>
+    <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('enable')"><i class="bi bi-play-fill me-1"></i>Activer</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('disable')"><i class="bi bi-pause-fill me-1"></i>Désactiver</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="openBulkGroupModal()"><i class="bi bi-folder me-1"></i>Assigner groupe</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="openBulkUpdateModal()"><i class="bi bi-sliders me-1"></i>Modifier valeurs</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="bulkAction('delete')"><i class="bi bi-trash me-1"></i>Supprimer</button>
+    <button class="btn btn-sm btn-link text-muted ms-auto p-0" onclick="clearSelection()">Tout désélectionner</button>
+  </div>
+</div>
+
 <div class="card">
   <div class="table-responsive">
     <table class="table table-hover mb-0 align-middle">
       <thead class="table-light">
         <tr>
+          <th style="width:1%"><input type="checkbox" class="form-check-input" id="select-all" onchange="selectAll(this.checked)"></th>
           <th>Nom</th><th>Hôte</th><th>Type</th><th>Groupe</th>
           <th>Intervalle</th><th>Timeout</th><th>Seuil</th>
           <th>Statut</th><th>Activée</th><th>Actions</th>
         </tr>
       </thead>
       <tbody id="probes-tbody">
-        <tr><td colspan="10" class="text-center py-4 text-muted">Chargement…</td></tr>
+        <tr><td colspan="11" class="text-center py-4 text-muted">Chargement…</td></tr>
       </tbody>
     </table>
   </div>
@@ -79,21 +93,116 @@
     </div>
   </div>
 </div>
+
+<!-- Bulk: assign group modal -->
+<div class="modal fade" id="bulkGroupModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Assigner un groupe</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Groupe</label>
+        <select class="form-select" id="bulk-group">
+          <option value="">– Aucun –</option>
+          {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button class="btn btn-primary" onclick="saveBulkGroup()">Appliquer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk: update values modal -->
+<div class="modal fade" id="bulkUpdateModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Modifier les valeurs</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">Laisser vide pour ne pas modifier.</p>
+        <div class="mb-3">
+          <label class="form-label">Intervalle (s)</label>
+          <input type="number" class="form-control" id="bulk-interval" placeholder="inchangé" min="5">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Timeout (s)</label>
+          <input type="number" class="form-control" id="bulk-timeout" placeholder="inchangé" min="1">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Seuil échecs</label>
+          <input type="number" class="form-control" id="bulk-threshold" placeholder="inchangé" min="1">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button class="btn btn-primary" onclick="saveBulkUpdate()">Appliquer</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-const _modal = new bootstrap.Modal(document.getElementById('probeModal'));
+const _modal      = new bootstrap.Modal(document.getElementById('probeModal'));
+const _bulkGroup  = new bootstrap.Modal(document.getElementById('bulkGroupModal'));
+const _bulkUpdate = new bootstrap.Modal(document.getElementById('bulkUpdateModal'));
+
+let _selected = new Set();
+
+function getSelectedIds() { return [..._selected]; }
+
+function updateBulkBar() {
+  const n = _selected.size;
+  const bar = document.getElementById('bulk-bar');
+  bar.classList.toggle('d-none', n === 0);
+  document.getElementById('bulk-count').textContent = `${n} sonde${n > 1 ? 's' : ''} sélectionnée${n > 1 ? 's' : ''}`;
+  const allBoxes = document.querySelectorAll('.probe-cb');
+  document.getElementById('select-all').indeterminate = n > 0 && n < allBoxes.length;
+  document.getElementById('select-all').checked = n > 0 && n === allBoxes.length;
+}
+
+function selectAll(checked) {
+  document.querySelectorAll('.probe-cb').forEach(cb => {
+    cb.checked = checked;
+    if (checked) _selected.add(parseInt(cb.dataset.id));
+    else _selected.delete(parseInt(cb.dataset.id));
+  });
+  updateBulkBar();
+}
+
+function toggleSelect(id, checked) {
+  if (checked) _selected.add(id); else _selected.delete(id);
+  updateBulkBar();
+}
+
+function clearSelection() {
+  _selected.clear();
+  document.querySelectorAll('.probe-cb').forEach(cb => cb.checked = false);
+  document.getElementById('select-all').checked = false;
+  document.getElementById('select-all').indeterminate = false;
+  updateBulkBar();
+}
 
 async function loadProbes() {
   const probes = await api('/api/probes');
   const tbody = document.getElementById('probes-tbody');
   if (!probes.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">Aucune sonde configurée.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">Aucune sonde configurée.</td></tr>';
     return;
   }
   tbody.innerHTML = probes.map(p => `
     <tr>
+      <td><input type="checkbox" class="form-check-input probe-cb" data-id="${p.id}"
+        ${_selected.has(p.id) ? 'checked' : ''}
+        onchange="toggleSelect(${p.id}, this.checked)"></td>
       <td class="fw-semibold">${esc(p.name)}</td>
       <td>${esc(p.host)}</td>
       <td><span class="badge bg-secondary">${p.type}</span></td>
@@ -113,6 +222,7 @@ async function loadProbes() {
         <button class="btn btn-sm btn-outline-danger" onclick="deleteProbe(${p.id}, '${esc(p.name)}')"><i class="bi bi-trash"></i></button>
       </td>
     </tr>`).join('');
+  updateBulkBar();
 }
 
 function openModal(probe) {
@@ -166,6 +276,56 @@ async function deleteProbe(pid, name) {
   if (!confirm(`Supprimer la sonde "${name}" ?`)) return;
   await api(`/api/probes/${pid}`, 'DELETE');
   toast('Sonde supprimée');
+  loadProbes();
+}
+
+// ── Bulk actions ────────────────────────────────────────────────────────────
+
+function openBulkGroupModal() {
+  document.getElementById('bulk-group').value = '';
+  _bulkGroup.show();
+}
+
+function openBulkUpdateModal() {
+  document.getElementById('bulk-interval').value = '';
+  document.getElementById('bulk-timeout').value = '';
+  document.getElementById('bulk-threshold').value = '';
+  _bulkUpdate.show();
+}
+
+async function bulkAction(action) {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  if (action === 'delete' && !confirm(`Supprimer ${ids.length} sonde(s) ?`)) return;
+  await api('/api/probes/bulk', 'POST', { ids, action });
+  const msg = { enable: 'Sondes activées', disable: 'Sondes désactivées', delete: 'Sondes supprimées' }[action];
+  toast(msg);
+  if (action === 'delete') _selected.clear();
+  loadProbes();
+}
+
+async function saveBulkGroup() {
+  const ids = getSelectedIds();
+  const group_id = document.getElementById('bulk-group').value || null;
+  await api('/api/probes/bulk', 'POST', { ids, action: 'assign_group', group_id });
+  _bulkGroup.hide();
+  toast('Groupe assigné');
+  loadProbes();
+}
+
+async function saveBulkUpdate() {
+  const ids = getSelectedIds();
+  const interval  = document.getElementById('bulk-interval').value;
+  const timeout   = document.getElementById('bulk-timeout').value;
+  const threshold = document.getElementById('bulk-threshold').value;
+  const payload = { ids, action: 'update' };
+  if (interval)  payload.interval = parseInt(interval);
+  if (timeout)   payload.timeout  = parseInt(timeout);
+  if (threshold) payload.failure_threshold = parseInt(threshold);
+  if (!interval && !timeout && !threshold) { toast('Aucune valeur saisie', 'warning'); return; }
+  await api('/api/probes/bulk', 'POST', payload);
+  _bulkUpdate.hide();
+  toast('Valeurs mises à jour');
   loadProbes();
 }
 
