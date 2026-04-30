@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Sondes – Network Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-hdd-network me-2"></i>Sondes</h4>
+  <button class="btn btn-primary" onclick="openModal()"><i class="bi bi-plus-lg me-1"></i>Ajouter</button>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Nom</th><th>Hôte</th><th>Type</th><th>Groupe</th>
+          <th>Intervalle</th><th>Timeout</th><th>Seuil</th>
+          <th>Statut</th><th>Activée</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="probes-tbody">
+        <tr><td colspan="10" class="text-center py-4 text-muted">Chargement…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add/Edit modal -->
+<div class="modal fade" id="probeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Ajouter une sonde</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="probe-id">
+        <div class="mb-3">
+          <label class="form-label">Nom *</label>
+          <input type="text" class="form-control" id="probe-name" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Hôte / IP *</label>
+          <input type="text" class="form-control" id="probe-host" placeholder="192.168.1.1 ou example.com">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Type *</label>
+          <select class="form-select" id="probe-type">
+            <option value="ping">Ping (ICMP)</option>
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Groupe</label>
+          <select class="form-select" id="probe-group">
+            <option value="">– Aucun –</option>
+            {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="row g-2">
+          <div class="col-4">
+            <label class="form-label">Intervalle (s)</label>
+            <input type="number" class="form-control" id="probe-interval" value="60" min="5">
+          </div>
+          <div class="col-4">
+            <label class="form-label">Timeout (s)</label>
+            <input type="number" class="form-control" id="probe-timeout" value="5" min="1">
+          </div>
+          <div class="col-4">
+            <label class="form-label">Seuil échecs</label>
+            <input type="number" class="form-control" id="probe-threshold" value="3" min="1">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button class="btn btn-primary" onclick="saveProbe()">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _modal = new bootstrap.Modal(document.getElementById('probeModal'));
+
+async function loadProbes() {
+  const probes = await api('/api/probes');
+  const tbody = document.getElementById('probes-tbody');
+  if (!probes.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">Aucune sonde configurée.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = probes.map(p => `
+    <tr>
+      <td class="fw-semibold">${esc(p.name)}</td>
+      <td>${esc(p.host)}</td>
+      <td><span class="badge bg-secondary">${p.type}</span></td>
+      <td>${p.group_name ? esc(p.group_name) : '–'}</td>
+      <td>${p.interval}s</td>
+      <td>${p.timeout}s</td>
+      <td>${p.failure_threshold}</td>
+      <td>${statusBadge(p.status)}</td>
+      <td>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" ${p.enabled ? 'checked' : ''}
+            onchange="toggleProbe(${p.id}, this.checked)">
+        </div>
+      </td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary me-1" onclick="editProbe(${p.id})"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteProbe(${p.id}, '${esc(p.name)}')"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+function openModal(probe) {
+  document.getElementById('modalTitle').textContent = probe ? 'Modifier la sonde' : 'Ajouter une sonde';
+  document.getElementById('probe-id').value      = probe?.id ?? '';
+  document.getElementById('probe-name').value    = probe?.name ?? '';
+  document.getElementById('probe-host').value    = probe?.host ?? '';
+  document.getElementById('probe-type').value    = probe?.type ?? 'ping';
+  document.getElementById('probe-group').value   = probe?.group_id ?? '';
+  document.getElementById('probe-interval').value   = probe?.interval ?? 60;
+  document.getElementById('probe-timeout').value    = probe?.timeout ?? 5;
+  document.getElementById('probe-threshold').value  = probe?.failure_threshold ?? 3;
+  _modal.show();
+}
+
+async function editProbe(pid) {
+  const p = await api(`/api/probes/${pid}`);
+  openModal(p);
+}
+
+async function saveProbe() {
+  const pid = document.getElementById('probe-id').value;
+  const payload = {
+    name: document.getElementById('probe-name').value.trim(),
+    host: document.getElementById('probe-host').value.trim(),
+    type: document.getElementById('probe-type').value,
+    group_id: document.getElementById('probe-group').value || null,
+    interval: parseInt(document.getElementById('probe-interval').value),
+    timeout: parseInt(document.getElementById('probe-timeout').value),
+    failure_threshold: parseInt(document.getElementById('probe-threshold').value),
+  };
+  if (!payload.name || !payload.host) { toast('Nom et hôte requis', 'danger'); return; }
+
+  if (pid) {
+    await api(`/api/probes/${pid}`, 'PUT', payload);
+    toast('Sonde mise à jour');
+  } else {
+    await api('/api/probes', 'POST', payload);
+    toast('Sonde créée');
+  }
+  _modal.hide();
+  loadProbes();
+}
+
+async function toggleProbe(pid, enabled) {
+  await api(`/api/probes/${pid}`, 'PUT', { enabled: enabled ? 1 : 0 });
+  loadProbes();
+}
+
+async function deleteProbe(pid, name) {
+  if (!confirm(`Supprimer la sonde "${name}" ?`)) return;
+  await api(`/api/probes/${pid}`, 'DELETE');
+  toast('Sonde supprimée');
+  loadProbes();
+}
+
+loadProbes();
+</script>
+{% endblock %}

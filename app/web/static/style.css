@@ -1,0 +1,25 @@
+body { background: #f8f9fa; font-size: 0.9rem; }
+
+.navbar-brand { font-size: 1rem; letter-spacing: .5px; }
+
+.card { border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.card-header { font-size: .85rem; background: #fff; border-bottom: 1px solid #eee; }
+
+.table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .5px; color: #6c757d; }
+.table td { vertical-align: middle; }
+
+.badge-status-up      { background: #198754; }
+.badge-status-down    { background: #dc3545; }
+.badge-status-unknown { background: #6c757d; }
+
+.status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+.dot-up      { background: #198754; }
+.dot-down    { background: #dc3545; animation: blink 1.2s infinite; }
+.dot-unknown { background: #adb5bd; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .3; }
+}
+
+.toast-container .toast { min-width: 250px; }

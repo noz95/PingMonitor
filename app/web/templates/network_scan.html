@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Scan réseau – Network Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-radar me-2"></i>Scan réseau</h4>
+  <button class="btn btn-primary" id="btn-scan" onclick="startScan()">
+    <i class="bi bi-play-fill me-1"></i>Démarrer le scan
+  </button>
+</div>
+
+<div class="alert alert-info d-none" id="scan-progress">
+  <div class="d-flex align-items-center gap-2">
+    <div class="spinner-border spinner-border-sm"></div>
+    <span>Scan en cours… (ARP + ping sweep /24)</span>
+  </div>
+</div>
+
+<div class="card d-none" id="results-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span id="results-title">Résultats</span>
+    <small class="text-muted" id="scan-time"></small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr><th>IP</th><th>Hostname</th><th>MAC</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="results-tbody"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _polling = null;
+
+async function startScan() {
+  document.getElementById('btn-scan').disabled = true;
+  document.getElementById('scan-progress').classList.remove('d-none');
+  document.getElementById('results-card').classList.add('d-none');
+  await api('/api/scan/start', 'POST', {});
+  _polling = setInterval(checkStatus, 2000);
+}
+
+async function checkStatus() {
+  const s = await api('/api/scan/status');
+  if (!s.running) {
+    clearInterval(_polling);
+    document.getElementById('scan-progress').classList.add('d-none');
+    document.getElementById('btn-scan').disabled = false;
+    renderResults(s);
+  }
+}
+
+function renderResults(s) {
+  const card = document.getElementById('results-card');
+  const tbody = document.getElementById('results-tbody');
+  document.getElementById('results-title').textContent = `${s.results.length} hôte(s) détecté(s)`;
+  document.getElementById('scan-time').textContent = s.finished_at ? 'Terminé à ' + s.finished_at : '';
+  card.classList.remove('d-none');
+
+  if (!s.results.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Aucun hôte trouvé.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = s.results.map(h => `
+    <tr id="row-${h.ip.replace(/\./g,'-')}">
+      <td class="fw-semibold">${esc(h.ip)}</td>
+      <td>${h.hostname ? esc(h.hostname) : '<span class="text-muted">–</span>'}</td>
+      <td class="text-muted small">${h.mac ? esc(h.mac) : '–'}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="addProbe('${esc(h.ip)}', '${esc(h.hostname || h.ip)}', 'ping', this)">
+          <i class="bi bi-plus-lg me-1"></i>Ping
+        </button>
+        <button class="btn btn-sm btn-outline-info" onclick="addProbe('${esc(h.ip)}', '${esc(h.hostname || h.ip)}', 'http', this)">
+          <i class="bi bi-plus-lg me-1"></i>HTTP
+        </button>
+      </td>
+    </tr>`).join('');
+}
+
+async function addProbe(host, name, type, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  await api('/api/scan/add', 'POST', { host, name, type });
+  btn.innerHTML = '<i class="bi bi-check-lg"></i> Ajouté';
+  btn.classList.replace('btn-outline-primary', 'btn-success');
+  btn.classList.replace('btn-outline-info', 'btn-success');
+  toast(`Sonde "${name}" ajoutée`);
+}
+
+// Auto-check if scan already running
+(async () => {
+  const s = await api('/api/scan/status');
+  if (s.running) {
+    document.getElementById('btn-scan').disabled = true;
+    document.getElementById('scan-progress').classList.remove('d-none');
+    _polling = setInterval(checkStatus, 2000);
+  } else if (s.results.length) {
+    renderResults(s);
+  }
+})();
+</script>
+{% endblock %}

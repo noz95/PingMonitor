@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Groupes – Network Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-collection me-2"></i>Groupes</h4>
+  <button class="btn btn-primary" onclick="openModal()"><i class="bi bi-plus-lg me-1"></i>Ajouter</button>
+</div>
+
+<div class="row g-3" id="groups-container">
+  <div class="col-12 text-center text-muted py-4">Chargement…</div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="groupModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Ajouter un groupe</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="group-id">
+        <div class="mb-3">
+          <label class="form-label">Nom *</label>
+          <input type="text" class="form-control" id="group-name">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <input type="text" class="form-control" id="group-desc">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button class="btn btn-primary" onclick="saveGroup()">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _modal = new bootstrap.Modal(document.getElementById('groupModal'));
+
+async function loadGroups() {
+  const groups = await api('/api/groups');
+  const c = document.getElementById('groups-container');
+  if (!groups.length) {
+    c.innerHTML = '<div class="col-12 text-center text-muted py-5">Aucun groupe. Créez-en un pour organiser vos sondes.</div>';
+    return;
+  }
+  c.innerHTML = groups.map(g => {
+    const total = g.probe_count || 0;
+    const up = g.up_count || 0;
+    const down = g.down_count || 0;
+    const statusCls = down > 0 ? 'danger' : (total > 0 ? 'success' : 'secondary');
+    const pct = total > 0 ? Math.round(up / total * 100) : 0;
+    return `
+    <div class="col-md-4 col-lg-3">
+      <div class="card h-100 border-${statusCls}">
+        <div class="card-body">
+          <h6 class="card-title fw-bold">${esc(g.name)}</h6>
+          <p class="text-muted small mb-2">${esc(g.description || '')}</p>
+          <div class="d-flex gap-2 mb-2">
+            <span class="badge bg-success">${up} UP</span>
+            <span class="badge bg-danger">${down} DOWN</span>
+            <span class="badge bg-secondary">${total - up - down} ?</span>
+          </div>
+          <div class="progress mb-2" style="height:6px">
+            <div class="progress-bar bg-${statusCls}" style="width:${pct}%"></div>
+          </div>
+          <small class="text-muted">${pct}% disponible</small>
+        </div>
+        <div class="card-footer d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="editGroup(${g.id}, '${esc(g.name)}', '${esc(g.description||'')}')">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-danger flex-fill" onclick="deleteGroup(${g.id}, '${esc(g.name)}')">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openModal(id, name, desc) {
+  document.getElementById('modalTitle').textContent = id ? 'Modifier le groupe' : 'Ajouter un groupe';
+  document.getElementById('group-id').value   = id ?? '';
+  document.getElementById('group-name').value = name ?? '';
+  document.getElementById('group-desc').value = desc ?? '';
+  _modal.show();
+}
+function editGroup(id, name, desc) { openModal(id, name, desc); }
+
+async function saveGroup() {
+  const id = document.getElementById('group-id').value;
+  const payload = {
+    name: document.getElementById('group-name').value.trim(),
+    description: document.getElementById('group-desc').value.trim(),
+  };
+  if (!payload.name) { toast('Nom requis', 'danger'); return; }
+  if (id) {
+    await api(`/api/groups/${id}`, 'PUT', payload);
+    toast('Groupe mis à jour');
+  } else {
+    await api('/api/groups', 'POST', payload);
+    toast('Groupe créé');
+  }
+  _modal.hide();
+  loadGroups();
+}
+
+async function deleteGroup(id, name) {
+  if (!confirm(`Supprimer le groupe "${name}" ?\n(Les sondes seront détachées, pas supprimées.)`)) return;
+  await api(`/api/groups/${id}`, 'DELETE');
+  toast('Groupe supprimé');
+  loadGroups();
+}
+
+loadGroups();
+setInterval(loadGroups, 30000);
+</script>
+{% endblock %}

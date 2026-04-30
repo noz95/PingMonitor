@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Paramètres – Network Monitor{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-gear me-2"></i>Paramètres</h4>
+
+<div class="row g-4">
+  <!-- SMTP -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-semibold"><i class="bi bi-envelope me-2"></i>Alertes email (SMTP SSL)</div>
+      <div class="card-body">
+        <div class="mb-3 form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="alert-enabled"
+            {% if settings.alert_enabled == '1' %}checked{% endif %}>
+          <label class="form-check-label" for="alert-enabled">Activer les alertes email</label>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Serveur SMTP</label>
+          <input type="text" class="form-control" id="smtp-host" value="{{ settings.smtp_host }}" placeholder="mail.infomaniak.com">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Port</label>
+          <input type="number" class="form-control" id="smtp-port" value="{{ settings.smtp_port }}" placeholder="465">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Utilisateur SMTP</label>
+          <input type="text" class="form-control" id="smtp-user" value="{{ settings.smtp_user }}" placeholder="user@example.com">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Mot de passe</label>
+          <input type="password" class="form-control" id="smtp-password" value="{{ settings.smtp_password }}" placeholder="••••••••">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Expéditeur (From)</label>
+          <input type="text" class="form-control" id="smtp-from" value="{{ settings.smtp_from }}" placeholder="monitor@example.com">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Destinataire(s) (To)</label>
+          <input type="text" class="form-control" id="smtp-to" value="{{ settings.smtp_to }}" placeholder="admin@example.com">
+          <div class="form-text">Séparer plusieurs adresses par une virgule.</div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" onclick="saveSettings()"><i class="bi bi-save me-1"></i>Enregistrer</button>
+          <button class="btn btn-outline-secondary" onclick="testEmail()"><i class="bi bi-send me-1"></i>Tester l'email</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- General -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-semibold"><i class="bi bi-sliders me-2"></i>Général</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label">Rétention historique (jours)</label>
+          <input type="number" class="form-control" id="retention-days" value="{{ settings.retention_days }}" min="1">
+          <div class="form-text">Les résultats plus anciens sont supprimés automatiquement.</div>
+        </div>
+        <button class="btn btn-primary" onclick="saveSettings()"><i class="bi bi-save me-1"></i>Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveSettings() {
+  const pwd = document.getElementById('smtp-password').value;
+  await api('/api/settings', 'POST', {
+    alert_enabled:  document.getElementById('alert-enabled').checked ? '1' : '0',
+    smtp_host:      document.getElementById('smtp-host').value,
+    smtp_port:      document.getElementById('smtp-port').value,
+    smtp_user:      document.getElementById('smtp-user').value,
+    smtp_password:  pwd,
+    smtp_from:      document.getElementById('smtp-from').value,
+    smtp_to:        document.getElementById('smtp-to').value,
+    retention_days: document.getElementById('retention-days').value,
+  });
+  toast('Paramètres enregistrés');
+}
+
+async function testEmail() {
+  await api('/api/settings/test-email', 'POST', {});
+  toast('Email de test envoyé (vérifiez votre boîte)');
+}
+</script>
+{% endblock %}
